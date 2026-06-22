@@ -8,6 +8,7 @@ import type {
 } from "./types";
 
 const COMMAND_ALIASES: Record<string, AgentCommand> = {
+  start: "help",
   cfhelp: "help",
   help: "help",
   diagnose: "diagnose",
@@ -48,6 +49,10 @@ export function parseCommand(text: string, botUsername?: string): ParsedCommand 
 
   const [, rawCommand, targetUsername] = match;
   if (!rawCommand) return null;
+  if (targetUsername && !botUsername) {
+    return null;
+  }
+
   if (targetUsername && botUsername && targetUsername.toLowerCase() !== botUsername.toLowerCase()) {
     return null;
   }

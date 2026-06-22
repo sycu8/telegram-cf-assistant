@@ -11,6 +11,7 @@ import {
   verifyTelegramSecret
 } from "./telegram";
 import type { CommandRequest, RuntimeEnv, TelegramUpdate } from "./types";
+import { parseTelegramUpdate } from "./webhook";
 
 export { ChatIssueAgent };
 
@@ -30,7 +31,11 @@ export default {
         return Response.json({ ok: false, error: "invalid Telegram webhook secret" }, { status: 401 });
       }
 
-      const update = (await request.json()) as TelegramUpdate;
+      const update = await parseTelegramUpdate(request);
+      if (!update) {
+        return Response.json({ ok: false, error: "invalid Telegram update payload" }, { status: 400 });
+      }
+
       ctx.waitUntil(handleTelegramUpdate(update, env));
       return Response.json({ ok: true });
     }
@@ -73,3 +78,4 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: RuntimeEnv): Pr
 
   await sendTelegramMessage(env, message.chat.id, response.text, message.message_id);
 }
+

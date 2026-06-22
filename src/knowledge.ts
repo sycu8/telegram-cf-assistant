@@ -105,7 +105,7 @@ export function redactSensitiveText(text: string): string {
   return text
     .replace(/(authorization:\s*bearer\s+)[a-z0-9._~+/=-]+/gi, "$1[REDACTED]")
     .replace(/(cf_[a-z0-9_]*token\s*[:=]\s*)[^\s]+/gi, "$1[REDACTED]")
-    .replace(/(api[_-]?key\s*[:=]\s*)[^\s]+/gi, "$1[REDACTED]")
+    .replace(/(api(?:[_\-\s]?key)\s*[:=]\s*)[^\s]+/gi, "$1[REDACTED]")
     .replace(/(secret\s*[:=]\s*)[^\s]+/gi, "$1[REDACTED]")
     .replace(/-----BEGIN [^-]+-----[\s\S]+?-----END [^-]+-----/g, "[REDACTED_PRIVATE_KEY]");
 }
