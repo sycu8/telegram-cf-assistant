@@ -1,0 +1,40 @@
+{
+  "name": "telegram-cf-assistant",
+  "version": "1.0.0",
+  "description": "Telegram bot assistant for Cloudflare issue diagnosis built on Workers and Agents.",
+  "type": "module",
+  "scripts": {
+    "cf-typegen": "wrangler types",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sycu8/telegram-cf-assistant.git"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "agents",
+    "telegram",
+    "bot"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sycu8/telegram-cf-assistant/issues"
+  },
+  "homepage": "https://github.com/sycu8/telegram-cf-assistant#readme",
+  "dependencies": {
+    "agents": "^0.16.2"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.18",
+    "@types/node": "^26.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.103.0"
+  }
+}
