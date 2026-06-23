@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatAgentName, isAllowedChat, parseCommand, sendTelegramMessage } from "../src/telegram";
+import { chatAgentName, formatChatNotAllowedResponse, isAllowedChat, parseCommand, sendTelegramMessage } from "../src/telegram";
 import type { RuntimeEnv } from "../src/types";
 
 describe("telegram helpers", () => {
@@ -28,6 +28,14 @@ describe("telegram helpers", () => {
 
   it("creates stable agent names from chat ids", () => {
     expect(chatAgentName(-100123)).toBe("telegram-chat--100123");
+  });
+
+  it("formats safe allowlist discovery guidance", () => {
+    const response = formatChatNotAllowedResponse(-1001234567890);
+
+    expect(response).toContain("not allowlisted");
+    expect(response).toContain("Chat ID: -1001234567890");
+    expect(response).toContain("ALLOWED_CHAT_IDS");
   });
 
   it("splits long Telegram replies into sendable chunks", async () => {

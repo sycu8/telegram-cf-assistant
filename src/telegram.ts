@@ -72,6 +72,16 @@ export function isAllowedChat(env: RuntimeEnv, chatId: number): boolean {
   return allowedIds.includes(String(chatId));
 }
 
+export function formatChatNotAllowedResponse(chatId: number): string {
+  return [
+    "This chat is not allowlisted yet.",
+    `Chat ID: ${chatId}`,
+    "",
+    "Add this chat ID to the Worker variable ALLOWED_CHAT_IDS, then redeploy or update the Worker environment.",
+    "After that, use /cfhelp or /diagnose."
+  ].join("\n");
+}
+
 export async function verifyTelegramSecret(request: Request, env: RuntimeEnv): Promise<boolean> {
   const expected = env.TELEGRAM_WEBHOOK_SECRET;
   if (!expected) return false;

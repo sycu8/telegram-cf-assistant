@@ -2,6 +2,7 @@ import { getAgentByName, routeAgentRequest } from "agents";
 import { ChatIssueAgent } from "./agent";
 import {
   chatAgentName,
+  formatChatNotAllowedResponse,
   getMessageText,
   getTelegramMessage,
   isAllowedChat,
@@ -51,12 +52,15 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: RuntimeEnv): Pr
   const text = getMessageText(message);
   if (!text) return;
 
+  const parsedCommand = parseCommand(text, env.BOT_USERNAME);
   if (!isAllowedChat(env, message.chat.id)) {
     console.warn("telegram_chat_not_allowed", { chatId: message.chat.id });
+    if (parsedCommand?.command === "help") {
+      await sendTelegramMessage(env, message.chat.id, formatChatNotAllowedResponse(message.chat.id), message.message_id);
+    }
     return;
   }
 
-  const parsedCommand = parseCommand(text, env.BOT_USERNAME);
   const ingestedMessage = toIngestedMessage(message, text, Boolean(parsedCommand));
   const agent = await getAgentByName<RuntimeEnv, ChatIssueAgent>(env.ChatIssueAgent, chatAgentName(message.chat.id));
 
