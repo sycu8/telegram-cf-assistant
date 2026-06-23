@@ -1,0 +1,4 @@
+TELEGRAM_BOT_TOKEN=replace-with-your-telegram-bot-token
+TELEGRAM_WEBHOOK_SECRET=replace-with-a-random-webhook-secret
+ALLOWED_CHAT_IDS=123456789,-1001234567890
+BOT_USERNAME=YourBotUsername

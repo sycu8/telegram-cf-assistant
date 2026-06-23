@@ -1,1 +1,234 @@
 # telegram-cf-assistant
+
+Telegram assistant for Cloudflare troubleshooting, deployed on Cloudflare Workers and the Cloudflare Agents SDK.
+
+The bot reads messages in approved Telegram chats, keeps a rolling understanding of the discussion, and replies only when someone runs a command such as `/diagnose`.
+
+## Live endpoints
+
+```text
+Worker:  https://telegram-cf-assistant.sycu-lee.workers.dev
+Health:  https://telegram-cf-assistant.sycu-lee.workers.dev/health
+Webhook: https://telegram-cf-assistant.sycu-lee.workers.dev/telegram/webhook
+Bot:     @cf_assisstant_bot
+```
+
+Do not put API tokens, Telegram bot tokens, webhook secrets, or private chat IDs in this README.
+
+## Features
+
+- Telegram webhook ingestion through Cloudflare Workers.
+- Per-chat state and message history with `ChatIssueAgent`.
+- Approval-based chat onboarding with `AccessRegistry`.
+- Workers AI and AI Gateway for Cloudflare-focused answers.
+- Deterministic fallback guidance when AI is unavailable.
+- Secret redaction before storing messages or building AI prompts.
+- Fast webhook acknowledgement with background processing.
+- Admin approval commands for new groups/channels.
+
+## Architecture
+
+```text
+Telegram
+  -> Cloudflare Worker /telegram/webhook
+  -> webhook secret validation
+  -> AccessRegistry Durable Object
+       -> pending/approved chat registry
+  -> ChatIssueAgent Durable Object per approved chat
+       -> rolling issue state
+       -> Durable Object SQLite message log
+       -> Workers AI through AI Gateway
+  -> Telegram sendMessage
+```
+
+## User commands
+
+These commands work in approved chats:
+
+```text
+/start
+/cfhelp
+/diagnose
+/summary
+/nextsteps
+/sources
+/forget
+/config
+```
+
+The bot stays silent for normal messages. It uses those messages only to keep context for the next command.
+
+## Admin commands
+
+These commands work only from admin chats:
+
+```text
+/pending
+/approve <chat_id>
+/deny <chat_id>
+```
+
+Example:
+
+```text
+/approve -1001234567890
+```
+
+## Chat approval workflow
+
+The bot is locked down by default:
+
+```text
+ALLOW_ALL_CHATS=false
+```
+
+Recommended production setup:
+
+```text
+ALLOWED_CHAT_IDS=<initial-admin-chat-id>
+ADMIN_CHAT_IDS=<admin-chat-id-1>,<admin-chat-id-2>
+```
+
+When the bot is added to a new group or channel:
+
+1. Telegram sends a `my_chat_member` update.
+2. The Worker stores a pending request in `AccessRegistry`.
+3. Admin chats receive an approval message.
+4. An admin runs `/approve <chat_id>`.
+5. The chat is persistently approved in Durable Object SQLite.
+
+Fallback flow:
+
+1. Add the bot to a chat.
+2. Send `/start`.
+3. The bot replies with the chat ID and sends an access request to admins.
+4. An admin approves the chat.
+
+Approved chats do not need to be manually added to `ALLOWED_CHAT_IDS`.
+
+## Cloudflare resources
+
+Configured in `wrangler.jsonc`:
+
+- Workers runtime
+- Agents SDK
+- `ChatIssueAgent` Durable Object
+- `AccessRegistry` Durable Object
+- SQLite-backed Durable Object migrations
+- Workers AI binding
+- AI Gateway request options
+- Workers observability
+
+## Setup
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Generate Cloudflare binding types:
+
+```bash
+npm run cf-typegen
+```
+
+Create local development secrets:
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+Edit `.dev.vars`:
+
+```text
+TELEGRAM_BOT_TOKEN=<telegram-bot-token>
+TELEGRAM_WEBHOOK_SECRET=<random-webhook-secret>
+ALLOWED_CHAT_IDS=<initial-admin-chat-id>
+ADMIN_CHAT_IDS=<admin-chat-id>
+BOT_USERNAME=<telegram-bot-username>
+```
+
+Generate a webhook secret:
+
+```bash
+openssl rand -hex 32
+```
+
+## Production secrets
+
+Set secrets with Wrangler:
+
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
+npx wrangler secret put ALLOWED_CHAT_IDS
+npx wrangler secret put ADMIN_CHAT_IDS
+npx wrangler secret put BOT_USERNAME
+```
+
+Set `CLOUDFLARE_API_TOKEN` in the deployment environment, not in the repo:
+
+```bash
+export CLOUDFLARE_API_TOKEN=<cloudflare-api-token>
+```
+
+Rotate any token that was pasted into chat, logs, issues, or pull requests.
+
+## Telegram webhook
+
+After deployment, register the Telegram webhook:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -d "url=https://telegram-cf-assistant.sycu-lee.workers.dev/telegram/webhook" \
+  -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+```
+
+Check webhook status:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+```
+
+The Worker validates `X-Telegram-Bot-Api-Secret-Token` before processing updates.
+
+## Development
+
+```bash
+npm run dev
+npm run check
+npm test
+```
+
+## Deploy
+
+Validate first:
+
+```bash
+npm test
+npm run check
+npx wrangler deploy --dry-run
+```
+
+Deploy:
+
+```bash
+npx wrangler deploy
+```
+
+Health check:
+
+```bash
+curl https://telegram-cf-assistant.sycu-lee.workers.dev/health
+```
+
+## QA documentation
+
+See [`docs/qa-inventory.md`](docs/qa-inventory.md) for:
+
+- feature inventory
+- role/route/command/state/workflow acceptance criteria
+- risk-based edge cases
+- bug log with reproduction evidence
+- final validation status
