@@ -120,6 +120,8 @@ export interface ChatIssueState {
   recentMessages: RecentMessage[];
   lastSummary: string | null;
   lastSources: KnowledgeSource[];
+  lastAutoSuggestionAt: string | null;
+  lastAutoSuggestionFingerprint: string | null;
   messageCount: number;
   updatedAt: string | null;
 }

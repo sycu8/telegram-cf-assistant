@@ -27,6 +27,14 @@ const ERROR_HINTS = [
   "undefined",
   "not found",
   "does not work",
+  "not working",
+  "issue",
+  "problem",
+  "bug",
+  "fix",
+  "troubleshoot",
+  "can't",
+  "cannot",
   "too many redirects",
   "403",
   "404",
@@ -47,6 +55,8 @@ export function createInitialState(): ChatIssueState {
     recentMessages: [],
     lastSummary: null,
     lastSources: [],
+    lastAutoSuggestionAt: null,
+    lastAutoSuggestionFingerprint: null,
     messageCount: 0,
     updatedAt: null
   };
@@ -84,6 +94,8 @@ export function reduceIssueState(
     missingInfo,
     recommendedNextSteps,
     recentMessages,
+    lastAutoSuggestionAt: currentState.lastAutoSuggestionAt ?? null,
+    lastAutoSuggestionFingerprint: currentState.lastAutoSuggestionFingerprint ?? null,
     messageCount: currentState.messageCount + 1,
     updatedAt: message.at
   };
@@ -112,6 +124,78 @@ export function mergeAiUnderstanding(
 
 export function getSourcesForState(state: ChatIssueState): KnowledgeSource[] {
   return uniqueSources([...state.lastSources, ...getKnowledgeSources(state.products)]).slice(0, 6);
+}
+
+export function shouldSuggestAutomatically(
+  state: ChatIssueState,
+  message: IngestedMessage,
+  options: {
+    now: Date;
+    cooldownSeconds: number;
+    minConfidence: number;
+  }
+): { shouldSuggest: boolean; fingerprint: string; reason: string } {
+  const fingerprint = buildAutoSuggestionFingerprint(state);
+
+  if (message.isCommand) {
+    return { shouldSuggest: false, fingerprint, reason: "command-message" };
+  }
+
+  if (state.products.length === 0) {
+    return { shouldSuggest: false, fingerprint, reason: "no-cloudflare-product" };
+  }
+
+  if (!messageLooksLikeIssue(message.text) && state.symptoms.length === 0 && state.suspectedCauses.length === 0) {
+    return { shouldSuggest: false, fingerprint, reason: "no-issue-signal" };
+  }
+
+  const strongestCause = state.suspectedCauses[0];
+  if (strongestCause && strongestCause.confidence < options.minConfidence) {
+    return { shouldSuggest: false, fingerprint, reason: "low-confidence" };
+  }
+
+  if (state.lastAutoSuggestionAt) {
+    const lastSuggestionMs = Date.parse(state.lastAutoSuggestionAt);
+    const cooldownMs = options.cooldownSeconds * 1000;
+    if (Number.isFinite(lastSuggestionMs) && options.now.getTime() - lastSuggestionMs < cooldownMs) {
+      return { shouldSuggest: false, fingerprint, reason: "cooldown" };
+    }
+  }
+
+  if (state.lastAutoSuggestionFingerprint && state.lastAutoSuggestionFingerprint === fingerprint) {
+    return { shouldSuggest: false, fingerprint, reason: "duplicate-topic" };
+  }
+
+  return { shouldSuggest: true, fingerprint, reason: "issue-detected" };
+}
+
+export function markAutoSuggestionSent(
+  state: ChatIssueState,
+  fingerprint: string,
+  at: string
+): ChatIssueState {
+  return {
+    ...state,
+    lastAutoSuggestionAt: at,
+    lastAutoSuggestionFingerprint: fingerprint,
+    updatedAt: at
+  };
+}
+
+export function formatAutoSuggestionResponse(state: ChatIssueState, sources: KnowledgeSource[]): string {
+  const diagnosis = formatDiagnoseResponse(state, sources);
+  return [
+    "Auto-detected possible Cloudflare issue.",
+    "",
+    diagnosis,
+    "",
+    "Reply with /diagnose for a deeper answer, /nextsteps for a short action list, or /forget to clear this chat context."
+  ].join("\n");
+}
+
+export function messageLooksLikeIssue(text: string): boolean {
+  const lower = text.toLowerCase();
+  return ERROR_HINTS.some((hint) => lower.includes(hint));
 }
 
 export function buildCommandPrompt(command: AgentCommand, state: ChatIssueState, sources: KnowledgeSource[]): string {
@@ -150,6 +234,12 @@ Rules:
 - Do not claim a root cause is confirmed unless the messages prove it.
 - Give fast practical guidance: likely issue, confidence, checks, fix steps, and missing info.
 - Keep the Telegram reply under 3500 characters. Use plain text, no Markdown tables.`;
+}
+
+function buildAutoSuggestionFingerprint(state: ChatIssueState): string {
+  const products = [...state.products].sort().join(",");
+  const cause = state.suspectedCauses[0]?.cause ?? state.topic ?? "unknown";
+  return `${products}|${cause}`.toLowerCase();
 }
 
 export function buildUnderstandingPrompt(state: ChatIssueState): string {

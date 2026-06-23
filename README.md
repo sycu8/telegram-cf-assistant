@@ -4,6 +4,8 @@ Telegram assistant for Cloudflare troubleshooting, deployed on Cloudflare Worker
 
 The bot reads messages in approved Telegram chats, keeps a rolling understanding of the discussion, and replies only when someone runs a command such as `/diagnose`.
 
+In approved chats, it can also automatically suggest troubleshooting guidance when it detects a likely Cloudflare issue in normal group conversation.
+
 ## Live endpoints
 
 ```text
@@ -25,6 +27,7 @@ Do not put API tokens, Telegram bot tokens, webhook secrets, or private chat IDs
 - Secret redaction before storing messages or building AI prompts.
 - Fast webhook acknowledgement with background processing.
 - Admin approval commands for new groups/channels.
+- Conservative auto-suggestions for detected Cloudflare issues, with cooldowns to avoid spam.
 
 ## Architecture
 
@@ -57,6 +60,14 @@ These commands work in approved chats:
 ```
 
 The bot stays silent for normal messages. It uses those messages only to keep context for the next command.
+
+Exception: if `AUTO_SUGGESTIONS_ENABLED=true`, the bot can proactively reply when it detects a likely Cloudflare issue, for example:
+
+```text
+My Worker deploys but env.DB is undefined with D1
+```
+
+The bot only auto-suggests when the message has Cloudflare product context plus issue/error language. It suppresses repeated suggestions using a per-chat cooldown and issue fingerprint.
 
 ## Admin commands
 
@@ -165,6 +176,14 @@ npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 npx wrangler secret put ALLOWED_CHAT_IDS
 npx wrangler secret put ADMIN_CHAT_IDS
 npx wrangler secret put BOT_USERNAME
+```
+
+Auto-suggestion behavior is configured in `wrangler.jsonc`:
+
+```text
+AUTO_SUGGESTIONS_ENABLED=true
+AUTO_SUGGESTION_COOLDOWN_SECONDS=900
+AUTO_SUGGESTION_MIN_CONFIDENCE=0.65
 ```
 
 Set `CLOUDFLARE_API_TOKEN` in the deployment environment, not in the repo:

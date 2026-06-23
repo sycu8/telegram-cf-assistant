@@ -38,6 +38,9 @@
     "CHAT_MODEL": "@cf/meta/llama-3.1-8b-instruct",
     "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct",
     "ENABLE_BACKGROUND_AI": "true",
+    "AUTO_SUGGESTIONS_ENABLED": "true",
+    "AUTO_SUGGESTION_COOLDOWN_SECONDS": "900",
+    "AUTO_SUGGESTION_MIN_CONFIDENCE": "0.65",
     "ALLOW_ALL_CHATS": "false",
     "MAX_RECENT_MESSAGES": "30"
   }

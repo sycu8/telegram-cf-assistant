@@ -92,6 +92,10 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: RuntimeEnv): Pr
 
   if (!parsedCommand) {
     await agent.ingestMessage(ingestedMessage);
+    const suggestion = await agent.maybeSuggestFix(ingestedMessage);
+    if (suggestion) {
+      await sendTelegramMessage(env, message.chat.id, suggestion.text, message.message_id);
+    }
     return;
   }
 

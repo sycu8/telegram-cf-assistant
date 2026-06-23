@@ -2,10 +2,13 @@ import { Agent } from "agents";
 import { generateCommandAnswer, updateUnderstandingWithAi } from "./ai";
 import {
   createInitialState,
+  formatAutoSuggestionResponse,
   formatFallbackCommandResponse,
   formatHelpResponse,
   getSourcesForState,
-  reduceIssueState
+  markAutoSuggestionSent,
+  reduceIssueState,
+  shouldSuggestAutomatically
 } from "./issue";
 import { getKnowledgeSources } from "./knowledge";
 import { parseBoolean, parsePositiveInteger } from "./telegram";
@@ -80,6 +83,47 @@ export class ChatIssueAgent extends Agent<RuntimeEnv, ChatIssueState> {
     };
   }
 
+  async maybeSuggestFix(message: IngestedMessage): Promise<CommandResponse | null> {
+    if (!parseBoolean(this.env.AUTO_SUGGESTIONS_ENABLED ?? "true")) return null;
+
+    const cooldownSeconds = parsePositiveInteger(this.env.AUTO_SUGGESTION_COOLDOWN_SECONDS, 900);
+    const minConfidence = parseFloatOrFallback(this.env.AUTO_SUGGESTION_MIN_CONFIDENCE, 0.65);
+    const decision = shouldSuggestAutomatically(this.state, message, {
+      now: new Date(message.at),
+      cooldownSeconds,
+      minConfidence
+    });
+
+    if (!decision.shouldSuggest) {
+      console.log("auto_suggestion_skipped", {
+        chatId: message.chatId,
+        reason: decision.reason,
+        fingerprint: decision.fingerprint
+      });
+      return null;
+    }
+
+    const sources = getSourcesForState(this.state);
+    const fallback = formatAutoSuggestionResponse(this.state, sources);
+    const aiAnswer = await generateCommandAnswer(this.env, "diagnose", {
+      ...this.state,
+      lastSources: sources
+    });
+    const text = [
+      aiAnswer ? "Auto-detected possible Cloudflare issue.\n\n" + aiAnswer : fallback,
+      "",
+      "Use /diagnose for a deeper answer or /nextsteps for a short action list."
+    ].join("\n");
+    const sentAt = new Date(message.at).toISOString();
+
+    this.setState({
+      ...markAutoSuggestionSent(this.state, decision.fingerprint, sentAt),
+      lastSources: sources
+    });
+
+    return { text, sources };
+  }
+
   private shouldRunBackgroundAi(message: IngestedMessage): boolean {
     if (message.isCommand) return false;
     if (!parseBoolean(this.env.ENABLE_BACKGROUND_AI)) return false;
@@ -125,9 +169,17 @@ export class ChatIssueAgent extends Agent<RuntimeEnv, ChatIssueState> {
       `Chat model: ${this.env.CHAT_MODEL ?? "@cf/meta/llama-3.1-8b-instruct"}`,
       `Summary model: ${this.env.SUMMARY_MODEL ?? "@cf/meta/llama-3.1-8b-instruct"}`,
       `AI Gateway: ${this.env.AI_GATEWAY_ID ?? "default"}`,
+      `Auto suggestions: ${parseBoolean(this.env.AUTO_SUGGESTIONS_ENABLED ?? "true") ? "enabled" : "disabled"}`,
+      `Auto suggestion cooldown: ${parsePositiveInteger(this.env.AUTO_SUGGESTION_COOLDOWN_SECONDS, 900)} seconds`,
       `Recent message window: ${parsePositiveInteger(this.env.MAX_RECENT_MESSAGES, 30)}`,
       `Tracked messages: ${this.state.messageCount}`,
       `Detected products: ${this.state.products.length > 0 ? this.state.products.join(", ") : "none yet"}`
     ].join("\n");
   }
+}
+
+function parseFloatOrFallback(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }

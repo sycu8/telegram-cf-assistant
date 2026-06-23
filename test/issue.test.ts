@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createInitialState, formatDiagnoseResponse, reduceIssueState } from "../src/issue";
+import {
+  createInitialState,
+  formatAutoSuggestionResponse,
+  formatDiagnoseResponse,
+  markAutoSuggestionSent,
+  reduceIssueState,
+  shouldSuggestAutomatically
+} from "../src/issue";
 import { getKnowledgeSources, redactSensitiveText } from "../src/knowledge";
 import { getMessageText, toIngestedMessage } from "../src/telegram";
 import { productionLikeTelegramUpdates } from "./fixtures/telegram-updates";
@@ -93,5 +100,81 @@ describe("issue understanding", () => {
     expect(redacted).not.toContain("BEGIN PRIVATE KEY");
     expect(redacted).toContain("[REDACTED]");
     expect(redacted).toContain("[REDACTED_PRIVATE_KEY]");
+  });
+
+  it("suggests automatically for Cloudflare issue signals", () => {
+    const message: IngestedMessage = {
+      chatId: 1,
+      messageId: 99,
+      text: "Our Worker deploys but env.DB is undefined for D1. How do we fix it?",
+      userDisplayName: "@dev",
+      at: "2026-06-23T04:10:00.000Z",
+      isCommand: false
+    };
+    const state = reduceIssueState(createInitialState(), message, 30);
+    const decision = shouldSuggestAutomatically(state, message, {
+      now: new Date(message.at),
+      cooldownSeconds: 900,
+      minConfidence: 0.65
+    });
+
+    expect(decision.shouldSuggest).toBe(true);
+    expect(decision.reason).toBe("issue-detected");
+    expect(formatAutoSuggestionResponse(state, getKnowledgeSources(state.products))).toContain("Auto-detected");
+  });
+
+  it("does not auto-suggest for non-issue chatter or command messages", () => {
+    const message: IngestedMessage = {
+      chatId: 1,
+      messageId: 100,
+      text: "Cloudflare Workers are useful for edge apps",
+      userDisplayName: "@dev",
+      at: "2026-06-23T04:10:00.000Z",
+      isCommand: false
+    };
+    const state = reduceIssueState(createInitialState(), message, 30);
+
+    expect(
+      shouldSuggestAutomatically(state, message, {
+        now: new Date(message.at),
+        cooldownSeconds: 900,
+        minConfidence: 0.65
+      }).reason
+    ).toBe("no-issue-signal");
+
+    expect(
+      shouldSuggestAutomatically(state, { ...message, isCommand: true }, {
+        now: new Date(message.at),
+        cooldownSeconds: 900,
+        minConfidence: 0.65
+      }).reason
+    ).toBe("command-message");
+  });
+
+  it("suppresses duplicate auto-suggestions during cooldown", () => {
+    const message: IngestedMessage = {
+      chatId: 1,
+      messageId: 101,
+      text: "Cloudflare SSL has too many redirects and the site is broken",
+      userDisplayName: "@ops",
+      at: "2026-06-23T04:10:00.000Z",
+      isCommand: false
+    };
+    const state = reduceIssueState(createInitialState(), message, 30);
+    const firstDecision = shouldSuggestAutomatically(state, message, {
+      now: new Date(message.at),
+      cooldownSeconds: 900,
+      minConfidence: 0.65
+    });
+    const markedState = markAutoSuggestionSent(state, firstDecision.fingerprint, message.at);
+    const secondDecision = shouldSuggestAutomatically(markedState, { ...message, messageId: 102 }, {
+      now: new Date("2026-06-23T04:15:00.000Z"),
+      cooldownSeconds: 900,
+      minConfidence: 0.65
+    });
+
+    expect(firstDecision.shouldSuggest).toBe(true);
+    expect(secondDecision.shouldSuggest).toBe(false);
+    expect(secondDecision.reason).toBe("cooldown");
   });
 });
