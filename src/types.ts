@@ -20,6 +20,9 @@ export type CloudflareProduct =
 
 export type AgentCommand =
   | "help"
+  | "approve"
+  | "deny"
+  | "pending"
   | "diagnose"
   | "summary"
   | "nextsteps"
@@ -31,6 +34,7 @@ export interface RuntimeEnv extends Env {
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
   ALLOWED_CHAT_IDS?: string;
+  ADMIN_CHAT_IDS?: string;
   BOT_USERNAME?: string;
 }
 
@@ -62,6 +66,19 @@ export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
+  channel_post?: TelegramMessage;
+  edited_channel_post?: TelegramMessage;
+  my_chat_member?: TelegramChatMemberUpdate;
+}
+
+export interface TelegramChatMemberUpdate {
+  chat: TelegramChat;
+  from?: TelegramUser;
+  date?: number;
+  new_chat_member?: {
+    status: string;
+    user?: TelegramUser;
+  };
 }
 
 export interface IngestedMessage {
@@ -122,4 +139,15 @@ export interface CommandResponse {
 export interface ParsedCommand {
   command: AgentCommand;
   raw: string;
+  args: string;
+}
+
+export interface ChatAccessRecord {
+  chatId: number;
+  type: string;
+  title?: string;
+  username?: string;
+  requestedAt: string;
+  approvedAt?: string;
+  approvedBy?: number;
 }

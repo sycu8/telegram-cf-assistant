@@ -1,7 +1,10 @@
 import type {
   AgentCommand,
+  ChatAccessRecord,
   IngestedMessage,
   ParsedCommand,
+  TelegramChat,
+  TelegramChatMemberUpdate,
   RuntimeEnv,
   TelegramMessage,
   TelegramUpdate
@@ -11,6 +14,9 @@ const COMMAND_ALIASES: Record<string, AgentCommand> = {
   start: "help",
   cfhelp: "help",
   help: "help",
+  approve: "approve",
+  deny: "deny",
+  pending: "pending",
   diagnose: "diagnose",
   summary: "summary",
   nextsteps: "nextsteps",
@@ -20,7 +26,16 @@ const COMMAND_ALIASES: Record<string, AgentCommand> = {
 };
 
 export function getTelegramMessage(update: TelegramUpdate): TelegramMessage | null {
-  return update.message ?? update.edited_message ?? null;
+  return update.message ?? update.edited_message ?? update.channel_post ?? update.edited_channel_post ?? null;
+}
+
+export function getTelegramChatMemberUpdate(update: TelegramUpdate): TelegramChatMemberUpdate | null {
+  return update.my_chat_member ?? null;
+}
+
+export function isBotAddedToChat(update: TelegramChatMemberUpdate): boolean {
+  const status = update.new_chat_member?.status;
+  return status === "member" || status === "administrator";
 }
 
 export function getMessageText(message: TelegramMessage): string | null {
@@ -43,7 +58,7 @@ export function toIngestedMessage(message: TelegramMessage, text: string, isComm
 export function parseCommand(text: string, botUsername?: string): ParsedCommand | null {
   if (!text.startsWith("/")) return null;
 
-  const token = text.split(/\s+/, 1)[0] ?? "";
+  const [token = "", ...args] = text.split(/\s+/);
   const match = /^\/([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9_]+))?$/.exec(token);
   if (!match) return null;
 
@@ -58,7 +73,7 @@ export function parseCommand(text: string, botUsername?: string): ParsedCommand 
   }
 
   const command = COMMAND_ALIASES[rawCommand.toLowerCase()];
-  return command ? { command, raw: rawCommand } : null;
+  return command ? { command, raw: rawCommand, args: args.join(" ").trim() } : null;
 }
 
 export function isAllowedChat(env: RuntimeEnv, chatId: number): boolean {
@@ -72,13 +87,57 @@ export function isAllowedChat(env: RuntimeEnv, chatId: number): boolean {
   return allowedIds.includes(String(chatId));
 }
 
+export function isAdminChat(env: RuntimeEnv, chatId: number): boolean {
+  const adminIds = parseChatIdList(env.ADMIN_CHAT_IDS);
+  const fallbackAdminIds = parseChatIdList(env.ALLOWED_CHAT_IDS);
+  const ids = adminIds.length > 0 ? adminIds : fallbackAdminIds;
+  return ids.includes(chatId);
+}
+
+export function getAdminChatIds(env: RuntimeEnv): number[] {
+  const adminIds = parseChatIdList(env.ADMIN_CHAT_IDS);
+  return adminIds.length > 0 ? adminIds : parseChatIdList(env.ALLOWED_CHAT_IDS);
+}
+
+export function parseChatIdArgument(args: string): number | null {
+  const [rawChatId] = args.trim().split(/\s+/);
+  if (!rawChatId) return null;
+  const parsed = Number.parseInt(rawChatId, 10);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 export function formatChatNotAllowedResponse(chatId: number): string {
   return [
-    "This chat is not allowlisted yet.",
+    "This chat is not approved yet.",
     `Chat ID: ${chatId}`,
     "",
-    "Add this chat ID to the Worker variable ALLOWED_CHAT_IDS, then redeploy or update the Worker environment.",
-    "After that, use /cfhelp or /diagnose."
+    "I sent an access request to the bot admin.",
+    "After approval, use /cfhelp or /diagnose."
+  ].join("\n");
+}
+
+export function formatAccessRequestForAdmin(record: ChatAccessRecord): string {
+  return [
+    "New Telegram chat requested Cloudflare assistant access.",
+    `Chat ID: ${record.chatId}`,
+    `Type: ${record.type}`,
+    `Title: ${record.title ?? "(none)"}`,
+    `Username: ${record.username ? `@${record.username}` : "(none)"}`,
+    "",
+    `Approve: /approve ${record.chatId}`,
+    `Deny: /deny ${record.chatId}`
+  ].join("\n");
+}
+
+export function formatPendingChats(records: ChatAccessRecord[]): string {
+  if (records.length === 0) return "No pending chat access requests.";
+
+  return [
+    "Pending chat access requests:",
+    ...records.map((record) => {
+      const label = record.title ?? record.username ?? record.type;
+      return `- ${record.chatId} (${label}) requested ${record.requestedAt}`;
+    })
   ].join("\n");
 }
 
@@ -138,6 +197,10 @@ export function parseBoolean(value: string | undefined): boolean {
   return value?.toLowerCase() === "true" || value === "1";
 }
 
+export function describeChat(chat: TelegramChat): string {
+  return chat.title ?? (chat.username ? `@${chat.username}` : `${chat.type} ${chat.id}`);
+}
+
 function formatUserDisplayName(message: TelegramMessage): string {
   const user = message.from;
   if (!user) return message.chat.title ?? String(message.chat.id);
@@ -169,4 +232,11 @@ function splitTelegramMessage(text: string): string[] {
     chunks.push(text.slice(index, index + maxLength));
   }
   return chunks;
+}
+
+function parseChatIdList(value: string | undefined): number[] {
+  return (value ?? "")
+    .split(",")
+    .map((item) => Number.parseInt(item.trim(), 10))
+    .filter((item) => Number.isSafeInteger(item));
 }

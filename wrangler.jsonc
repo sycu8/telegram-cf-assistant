@@ -12,6 +12,10 @@
       {
         "name": "ChatIssueAgent",
         "class_name": "ChatIssueAgent"
+      },
+      {
+        "name": "AccessRegistry",
+        "class_name": "AccessRegistry"
       }
     ]
   },
@@ -19,6 +23,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["ChatIssueAgent"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["AccessRegistry"]
     }
   ],
   "observability": {

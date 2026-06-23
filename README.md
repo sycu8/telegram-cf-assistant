@@ -33,9 +33,39 @@ Telegram
 /sources
 /forget
 /config
+/pending
+/approve <chat_id>
+/deny <chat_id>
 ```
 
 The bot stays silent for normal messages and only replies to commands.
+
+## Chat access approval
+
+The bot is locked down by default:
+
+```text
+ALLOW_ALL_CHATS=false
+```
+
+Known/admin chats are configured with:
+
+```text
+ALLOWED_CHAT_IDS=912723622
+ADMIN_CHAT_IDS=912723622
+```
+
+When the bot is added to a new group/channel, or someone sends `/start` in a new chat, the bot stores a pending access request in the `AccessRegistry` Durable Object and notifies admin chats.
+
+Admins can manage requests from Telegram:
+
+```text
+/pending
+/approve -1001234567890
+/deny -1001234567890
+```
+
+Approved chats are stored persistently in Durable Object SQLite and do not need to be added to `ALLOWED_CHAT_IDS`.
 
 ## Cloudflare resources
 
@@ -44,6 +74,7 @@ Configured in `wrangler.jsonc`:
 - Workers runtime
 - Agents SDK
 - Durable Objects with SQLite migrations
+- AccessRegistry Durable Object for dynamic chat approvals
 - Workers AI binding
 - AI Gateway request options
 - Workers observability
