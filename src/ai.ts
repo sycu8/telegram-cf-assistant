@@ -129,6 +129,8 @@ function parseUnderstandingJson(text: string): Partial<ChatIssueState> | null {
       suspectedCauses: asSuspectedCauses(parsed.suspectedCauses),
       missingInfo: asStringArray(parsed.missingInfo),
       recommendedNextSteps: asStringArray(parsed.recommendedNextSteps),
+      conversationNotes: asStringArray(parsed.conversationNotes),
+      openQuestions: asStringArray(parsed.openQuestions),
       lastSummary: typeof parsed.lastSummary === "string" ? parsed.lastSummary : null
     };
   } catch (error) {

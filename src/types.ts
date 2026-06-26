@@ -117,6 +117,8 @@ export interface ChatIssueState {
   suspectedCauses: SuspectedCause[];
   missingInfo: string[];
   recommendedNextSteps: string[];
+  conversationNotes: string[];
+  openQuestions: string[];
   recentMessages: RecentMessage[];
   lastSummary: string | null;
   lastSources: KnowledgeSource[];

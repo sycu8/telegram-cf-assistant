@@ -4,7 +4,7 @@ Telegram assistant for Cloudflare troubleshooting, deployed on Cloudflare Worker
 
 The bot reads messages in approved Telegram chats, keeps a rolling understanding of the discussion, and replies only when someone runs a command such as `/diagnose`.
 
-In approved chats, it can also automatically suggest troubleshooting guidance when it detects a likely Cloudflare issue in normal group conversation.
+In approved chats, it can also automatically suggest troubleshooting guidance when it detects that a customer is asking for help or mentioning a likely Cloudflare issue in normal group conversation.
 
 ## Live endpoints
 
@@ -28,6 +28,8 @@ Do not put API tokens, Telegram bot tokens, webhook secrets, or private chat IDs
 - Fast webhook acknowledgement with background processing.
 - Admin approval commands for new groups/channels.
 - Conservative auto-suggestions for detected Cloudflare issues, with cooldowns to avoid spam.
+- Customer-question detection in English and Vietnamese, including phrases such as "how to", "need help", "làm sao", "sửa lỗi", "khắc phục", and "hướng dẫn".
+- Assistant working notes via `conversationNotes` and `openQuestions` so replies can use the broader chat context.
 
 ## Architecture
 
@@ -61,13 +63,28 @@ These commands work in approved chats:
 
 The bot stays silent for normal messages. It uses those messages only to keep context for the next command.
 
-Exception: if `AUTO_SUGGESTIONS_ENABLED=true`, the bot can proactively reply when it detects a likely Cloudflare issue, for example:
+Exception: if `AUTO_SUGGESTIONS_ENABLED=true`, the bot can proactively reply when it detects either:
+
+- a Cloudflare issue/error signal
+- a customer question asking for troubleshooting or fix guidance
 
 ```text
 My Worker deploys but env.DB is undefined with D1
 ```
 
-The bot only auto-suggests when the message has Cloudflare product context plus issue/error language. It suppresses repeated suggestions using a per-chat cooldown and issue fingerprint.
+```text
+Khách hàng hỏi làm sao sửa lỗi Cloudflare Worker deploy xong nhưng API trả 500?
+```
+
+The bot only auto-suggests when the message has Cloudflare product context plus either issue/error language or customer-help intent. It suppresses repeated suggestions using a per-chat cooldown and issue fingerprint.
+
+When it responds automatically, it includes:
+
+- assistant notes from the conversation
+- likely issue and confidence
+- fix/troubleshooting steps
+- missing information to ask the customer for
+- relevant Cloudflare docs
 
 ## Admin commands
 

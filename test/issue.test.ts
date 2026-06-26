@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   createInitialState,
   formatAutoSuggestionResponse,
+  formatAssistantNotes,
   formatDiagnoseResponse,
   markAutoSuggestionSent,
+  messageLooksLikeCustomerQuestion,
   reduceIssueState,
   shouldSuggestAutomatically
 } from "../src/issue";
@@ -29,6 +31,8 @@ describe("issue understanding", () => {
     expect(state.products).toContain("D1");
     expect(state.suspectedCauses[0]?.cause).toContain("D1 binding name mismatch");
     expect(state.recommendedNextSteps.join(" ")).toContain("D1 binding name");
+    expect(state.conversationNotes.join(" ")).toContain("Customer appears to ask for help");
+    expect(state.openQuestions[0]).toContain("Maybe the binding is wrong");
   });
 
   it("formats a useful fallback diagnosis", () => {
@@ -140,7 +144,7 @@ describe("issue understanding", () => {
         cooldownSeconds: 900,
         minConfidence: 0.65
       }).reason
-    ).toBe("no-issue-signal");
+    ).toBe("no-customer-question-or-issue-signal");
 
     expect(
       shouldSuggestAutomatically(state, { ...message, isCommand: true }, {
@@ -176,5 +180,49 @@ describe("issue understanding", () => {
     expect(firstDecision.shouldSuggest).toBe(true);
     expect(secondDecision.shouldSuggest).toBe(false);
     expect(secondDecision.reason).toBe("cooldown");
+  });
+
+  it("detects Vietnamese customer questions and records assistant notes", () => {
+    const message: IngestedMessage = {
+      chatId: 1,
+      messageId: 103,
+      text: "Khách hàng hỏi làm sao sửa lỗi Cloudflare Worker deploy xong nhưng API trả 500?",
+      userDisplayName: "@support",
+      at: "2026-06-23T04:20:00.000Z",
+      isCommand: false
+    };
+    const state = reduceIssueState(createInitialState(), message, 30);
+    const decision = shouldSuggestAutomatically(state, message, {
+      now: new Date(message.at),
+      cooldownSeconds: 900,
+      minConfidence: 0.65
+    });
+
+    expect(messageLooksLikeCustomerQuestion(message.text)).toBe(true);
+    expect(state.products).toContain("Workers");
+    expect(state.openQuestions[0]).toContain("Khách hàng hỏi");
+    expect(formatAssistantNotes(state)).toContain("Customer question");
+    expect(decision.shouldSuggest).toBe(true);
+  });
+
+  it("can auto-suggest for customer troubleshooting questions even before a known cause exists", () => {
+    const message: IngestedMessage = {
+      chatId: 1,
+      messageId: 104,
+      text: "Customer asks: how to troubleshoot Cloudflare R2 CORS upload issue?",
+      userDisplayName: "@support",
+      at: "2026-06-23T04:25:00.000Z",
+      isCommand: false
+    };
+    const state = reduceIssueState(createInitialState(), message, 30);
+    const decision = shouldSuggestAutomatically(state, message, {
+      now: new Date(message.at),
+      cooldownSeconds: 900,
+      minConfidence: 0.65
+    });
+
+    expect(state.products).toContain("R2");
+    expect(state.suspectedCauses).toHaveLength(0);
+    expect(decision.shouldSuggest).toBe(true);
   });
 });
