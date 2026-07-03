@@ -9,7 +9,7 @@ import {
   reduceIssueState,
   shouldSuggestAutomatically
 } from "../src/issue";
-import { getKnowledgeSources, redactSensitiveText } from "../src/knowledge";
+import { formatKnowledgeContext, getKnowledgeSources, redactSensitiveText } from "../src/knowledge";
 import { getMessageText, toIngestedMessage } from "../src/telegram";
 import { productionLikeTelegramUpdates } from "./fixtures/telegram-updates";
 import type { IngestedMessage } from "../src/types";
@@ -52,8 +52,18 @@ describe("issue understanding", () => {
     const response = formatDiagnoseResponse(state, getKnowledgeSources(state.products));
 
     expect(response).toContain("Likely issue:");
+    expect(response).toContain("Reply mode:");
     expect(response).toContain("SSL/TLS");
     expect(response).toContain("Cloudflare");
+  });
+
+  it("adds curated knowledge summaries and checklist context", () => {
+    const sources = getKnowledgeSources(["Workers", "D1"]);
+    const context = formatKnowledgeContext(sources);
+
+    expect(context).toContain("Cloudflare Workers docs");
+    expect(context).toContain("Checklist:");
+    expect(context).toContain("Verify binding name");
   });
 
   it("builds understanding from sanitized production-like D1 discussion", () => {

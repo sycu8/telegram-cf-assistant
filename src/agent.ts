@@ -12,7 +12,7 @@ import {
 } from "./issue";
 import { getKnowledgeSources } from "./knowledge";
 import { parseBoolean, parsePositiveInteger } from "./telegram";
-import type { ChatIssueState, CommandRequest, CommandResponse, IngestedMessage, RuntimeEnv } from "./types";
+import type { ChatIssueState, ChatSettings, CommandRequest, CommandResponse, IngestedMessage, RuntimeEnv } from "./types";
 
 export class ChatIssueAgent extends Agent<RuntimeEnv, ChatIssueState> {
   override initialState = createInitialState();
@@ -83,11 +83,12 @@ export class ChatIssueAgent extends Agent<RuntimeEnv, ChatIssueState> {
     };
   }
 
-  async maybeSuggestFix(message: IngestedMessage): Promise<CommandResponse | null> {
-    if (!parseBoolean(this.env.AUTO_SUGGESTIONS_ENABLED ?? "true")) return null;
+  async maybeSuggestFix(message: IngestedMessage, settings?: ChatSettings): Promise<CommandResponse | null> {
+    const enabled = settings?.autoSuggestionsEnabled ?? parseBoolean(this.env.AUTO_SUGGESTIONS_ENABLED ?? "true");
+    if (!enabled) return null;
 
-    const cooldownSeconds = parsePositiveInteger(this.env.AUTO_SUGGESTION_COOLDOWN_SECONDS, 900);
-    const minConfidence = parseFloatOrFallback(this.env.AUTO_SUGGESTION_MIN_CONFIDENCE, 0.65);
+    const cooldownSeconds = settings?.autoSuggestionCooldownSeconds ?? parsePositiveInteger(this.env.AUTO_SUGGESTION_COOLDOWN_SECONDS, 900);
+    const minConfidence = settings?.autoSuggestionMinConfidence ?? parseFloatOrFallback(this.env.AUTO_SUGGESTION_MIN_CONFIDENCE, 0.65);
     const decision = shouldSuggestAutomatically(this.state, message, {
       now: new Date(message.at),
       cooldownSeconds,

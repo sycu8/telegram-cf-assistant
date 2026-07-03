@@ -23,6 +23,7 @@ Do not put API tokens, Telegram bot tokens, webhook secrets, or private chat IDs
 - Per-chat state and message history with `ChatIssueAgent`.
 - Approval-based chat onboarding with `AccessRegistry`.
 - Workers AI and AI Gateway for Cloudflare-focused answers.
+- Curated Cloudflare troubleshooting context with source summaries and product-specific checklists.
 - Deterministic fallback guidance when AI is unavailable.
 - Secret redaction before storing messages or building AI prompts.
 - Fast webhook acknowledgement with background processing.
@@ -30,6 +31,8 @@ Do not put API tokens, Telegram bot tokens, webhook secrets, or private chat IDs
 - Conservative auto-suggestions for detected Cloudflare issues, with cooldowns to avoid spam.
 - Customer-question detection in English and Vietnamese, including phrases such as "how to", "need help", "làm sao", "sửa lỗi", "khắc phục", and "hướng dẫn".
 - Assistant working notes via `conversationNotes` and `openQuestions` so replies can use the broader chat context.
+- Per-chat auto-suggestion settings controlled by Telegram admin commands.
+- Basic observability counters for messages, commands, approvals, and auto-suggestions.
 
 ## Architecture
 
@@ -81,10 +84,10 @@ The bot only auto-suggests when the message has Cloudflare product context plus 
 When it responds automatically, it includes:
 
 - assistant notes from the conversation
-- likely issue and confidence
+- likely issue, confidence, and reply mode
 - fix/troubleshooting steps
 - missing information to ask the customer for
-- relevant Cloudflare docs
+- relevant Cloudflare docs, source summaries, and product-specific checklist context
 
 ## Admin commands
 
@@ -92,15 +95,24 @@ These commands work only from admin chats:
 
 ```text
 /pending
+/approved
 /approve <chat_id>
 /deny <chat_id>
+/revoke <chat_id>
+/status
+/autosuggest on|off [chat_id]
+/setcooldown <seconds> [chat_id]
 ```
 
 Example:
 
 ```text
 /approve -1001234567890
+/autosuggest off -1001234567890
+/setcooldown 300 -1001234567890
 ```
+
+`/status` reports pending chat count, approved chat count, and event counters such as `message_ingested`, `auto_suggestion_sent`, and command usage.
 
 ## Chat approval workflow
 
@@ -201,6 +213,16 @@ Auto-suggestion behavior is configured in `wrangler.jsonc`:
 AUTO_SUGGESTIONS_ENABLED=true
 AUTO_SUGGESTION_COOLDOWN_SECONDS=900
 AUTO_SUGGESTION_MIN_CONFIDENCE=0.65
+```
+
+Admins can override auto-suggestion behavior per chat without redeploying:
+
+```text
+/autosuggest on
+/autosuggest off
+/autosuggest off -1001234567890
+/setcooldown 300
+/setcooldown 900 -1001234567890
 ```
 
 Set `CLOUDFLARE_API_TOKEN` in the deployment environment, not in the repo:

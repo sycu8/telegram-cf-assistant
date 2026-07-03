@@ -23,6 +23,11 @@ export type AgentCommand =
   | "approve"
   | "deny"
   | "pending"
+  | "approved"
+  | "revoke"
+  | "status"
+  | "autosuggest"
+  | "setcooldown"
   | "diagnose"
   | "summary"
   | "nextsteps"
@@ -108,6 +113,8 @@ export interface KnowledgeSource {
   title: string;
   url: string;
   product?: CloudflareProduct;
+  summary?: string;
+  checklist?: string[];
 }
 
 export interface ChatIssueState {
@@ -154,4 +161,20 @@ export interface ChatAccessRecord {
   requestedAt: string;
   approvedAt?: string;
   approvedBy?: number;
+}
+
+export interface ChatSettings {
+  chatId: number;
+  autoSuggestionsEnabled: boolean;
+  autoSuggestionCooldownSeconds: number;
+  autoSuggestionMinConfidence: number;
+  language: "auto" | "en" | "vi";
+  updatedAt: string;
+}
+
+export interface BotStatus {
+  pendingChats: number;
+  approvedChats: number;
+  events: Record<string, number>;
+  generatedAt: string;
 }

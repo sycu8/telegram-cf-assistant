@@ -28,26 +28,38 @@ export const PRODUCT_RULES: ProductRule[] = [
 
 const PRODUCT_SOURCES: Record<CloudflareProduct, KnowledgeSource[]> = {
   Workers: [
-    { title: "Cloudflare Workers docs", url: "https://developers.cloudflare.com/workers/", product: "Workers" },
-    { title: "Workers best practices", url: "https://developers.cloudflare.com/workers/best-practices/workers-best-practices/", product: "Workers" }
+    {
+      title: "Cloudflare Workers docs",
+      url: "https://developers.cloudflare.com/workers/",
+      product: "Workers",
+      summary: "Workers runtime, request handling, bindings, deploys, logs, and routing.",
+      checklist: ["Check Worker logs/tail output", "Validate bindings in wrangler config", "Run wrangler deploy --dry-run"]
+    },
+    {
+      title: "Workers best practices",
+      url: "https://developers.cloudflare.com/workers/best-practices/workers-best-practices/",
+      product: "Workers",
+      summary: "Production guidance for Workers correctness, performance, secrets, and observability.",
+      checklist: ["Avoid request state in globals", "Use waitUntil for background work", "Keep secrets in bindings/secrets"]
+    }
   ],
-  Pages: [{ title: "Cloudflare Pages docs", url: "https://developers.cloudflare.com/pages/", product: "Pages" }],
-  DNS: [{ title: "Cloudflare DNS docs", url: "https://developers.cloudflare.com/dns/", product: "DNS" }],
-  "SSL/TLS": [{ title: "Cloudflare SSL/TLS docs", url: "https://developers.cloudflare.com/ssl/", product: "SSL/TLS" }],
-  WAF: [{ title: "Cloudflare WAF docs", url: "https://developers.cloudflare.com/waf/", product: "WAF" }],
-  Cache: [{ title: "Cloudflare Cache docs", url: "https://developers.cloudflare.com/cache/", product: "Cache" }],
-  R2: [{ title: "Cloudflare R2 docs", url: "https://developers.cloudflare.com/r2/", product: "R2" }],
-  D1: [{ title: "Cloudflare D1 docs", url: "https://developers.cloudflare.com/d1/", product: "D1" }],
-  KV: [{ title: "Cloudflare KV docs", url: "https://developers.cloudflare.com/kv/", product: "KV" }],
-  Queues: [{ title: "Cloudflare Queues docs", url: "https://developers.cloudflare.com/queues/", product: "Queues" }],
-  "Zero Trust": [{ title: "Cloudflare Zero Trust docs", url: "https://developers.cloudflare.com/cloudflare-one/", product: "Zero Trust" }],
-  "Load Balancing": [{ title: "Cloudflare Load Balancing docs", url: "https://developers.cloudflare.com/load-balancing/", product: "Load Balancing" }],
-  "Email Routing": [{ title: "Cloudflare Email Routing docs", url: "https://developers.cloudflare.com/email-routing/", product: "Email Routing" }],
-  "Durable Objects": [{ title: "Cloudflare Durable Objects docs", url: "https://developers.cloudflare.com/durable-objects/", product: "Durable Objects" }],
-  Vectorize: [{ title: "Cloudflare Vectorize docs", url: "https://developers.cloudflare.com/vectorize/", product: "Vectorize" }],
-  "Workers AI": [{ title: "Cloudflare Workers AI docs", url: "https://developers.cloudflare.com/workers-ai/", product: "Workers AI" }],
-  "AI Gateway": [{ title: "Cloudflare AI Gateway docs", url: "https://developers.cloudflare.com/ai-gateway/", product: "AI Gateway" }],
-  Wrangler: [{ title: "Wrangler configuration docs", url: "https://developers.cloudflare.com/workers/wrangler/configuration/", product: "Wrangler" }]
+  Pages: [{ title: "Cloudflare Pages docs", url: "https://developers.cloudflare.com/pages/", product: "Pages", summary: "Pages build, preview, deployment, and Functions troubleshooting.", checklist: ["Check build logs", "Confirm env vars per environment", "Compare preview vs production"] }],
+  DNS: [{ title: "Cloudflare DNS docs", url: "https://developers.cloudflare.com/dns/", product: "DNS", summary: "DNS records, nameservers, proxy status, and resolver behavior.", checklist: ["Confirm authoritative nameservers", "Check record type/value", "Check proxied vs DNS-only"] }],
+  "SSL/TLS": [{ title: "Cloudflare SSL/TLS docs", url: "https://developers.cloudflare.com/ssl/", product: "SSL/TLS", summary: "SSL modes, certificates, redirect loops, and origin TLS errors.", checklist: ["Check SSL mode", "Inspect origin certificate", "Look for conflicting redirects"] }],
+  WAF: [{ title: "Cloudflare WAF docs", url: "https://developers.cloudflare.com/waf/", product: "WAF", summary: "WAF managed/custom rules and Security Events analysis.", checklist: ["Find Ray ID in Security Events", "Identify matching rule", "Adjust skip/exception rule if valid"] }],
+  Cache: [{ title: "Cloudflare Cache docs", url: "https://developers.cloudflare.com/cache/", product: "Cache", summary: "Cache Rules, purge behavior, stale content, and response headers.", checklist: ["Inspect cf-cache-status", "Check Cache Rules/Page Rules", "Purge exact URL after changes"] }],
+  R2: [{ title: "Cloudflare R2 docs", url: "https://developers.cloudflare.com/r2/", product: "R2", summary: "Object storage, S3 compatibility, CORS, and bucket access.", checklist: ["Check bucket/CORS policy", "Validate S3 credentials/bindings", "Confirm object key/path"] }],
+  D1: [{ title: "Cloudflare D1 docs", url: "https://developers.cloudflare.com/d1/", product: "D1", summary: "SQLite database bindings, migrations, queries, and local/remote behavior.", checklist: ["Verify binding name", "Run migrations", "Regenerate types after config changes"] }],
+  KV: [{ title: "Cloudflare KV docs", url: "https://developers.cloudflare.com/kv/", product: "KV", summary: "Key-value namespaces, eventual consistency, and binding access.", checklist: ["Verify namespace binding", "Account for eventual consistency", "Check key prefixes/TTL"] }],
+  Queues: [{ title: "Cloudflare Queues docs", url: "https://developers.cloudflare.com/queues/", product: "Queues", summary: "Queue producers, consumers, retries, and dead-letter handling.", checklist: ["Verify producer/consumer bindings", "Inspect retry/dead-letter config", "Check batch handler logs"] }],
+  "Zero Trust": [{ title: "Cloudflare Zero Trust docs", url: "https://developers.cloudflare.com/cloudflare-one/", product: "Zero Trust", summary: "Access, Gateway, WARP, tunnels, and policy troubleshooting.", checklist: ["Check Access/Gateway policies", "Verify identity posture", "Inspect tunnel health"] }],
+  "Load Balancing": [{ title: "Cloudflare Load Balancing docs", url: "https://developers.cloudflare.com/load-balancing/", product: "Load Balancing", summary: "Pools, origins, monitors, health checks, and steering.", checklist: ["Check monitor status", "Verify origin pool health", "Review steering policy"] }],
+  "Email Routing": [{ title: "Cloudflare Email Routing docs", url: "https://developers.cloudflare.com/email-routing/", product: "Email Routing", summary: "MX records, routing rules, and destination verification.", checklist: ["Check MX records", "Verify destination address", "Review routing rules"] }],
+  "Durable Objects": [{ title: "Cloudflare Durable Objects docs", url: "https://developers.cloudflare.com/durable-objects/", product: "Durable Objects", summary: "Stateful objects, SQLite storage, migrations, and RPC.", checklist: ["Confirm migration class", "Use deterministic object name", "Inspect storage/RPC errors"] }],
+  Vectorize: [{ title: "Cloudflare Vectorize docs", url: "https://developers.cloudflare.com/vectorize/", product: "Vectorize", summary: "Vector indexes, embeddings, and retrieval workflows.", checklist: ["Check index dimensions", "Verify embedding model", "Inspect top-k retrieval quality"] }],
+  "Workers AI": [{ title: "Cloudflare Workers AI docs", url: "https://developers.cloudflare.com/workers-ai/", product: "Workers AI", summary: "Model inference, bindings, supported parameters, and AI Gateway usage.", checklist: ["Check model name", "Validate binding env.AI", "Review model input shape"] }],
+  "AI Gateway": [{ title: "Cloudflare AI Gateway docs", url: "https://developers.cloudflare.com/ai-gateway/", product: "AI Gateway", summary: "AI observability, caching, retries, and provider routing.", checklist: ["Check gateway id", "Inspect logs/cache", "Review retry/fallback settings"] }],
+  Wrangler: [{ title: "Wrangler configuration docs", url: "https://developers.cloudflare.com/workers/wrangler/configuration/", product: "Wrangler", summary: "Worker config, bindings, secrets, deploys, and generated types.", checklist: ["Run wrangler deploy --dry-run", "Run wrangler types", "Check secret vs vars usage"] }]
 };
 
 const DEFAULT_SOURCES: KnowledgeSource[] = [
@@ -65,6 +77,16 @@ export function detectCloudflareProducts(text: string): CloudflareProduct[] {
 export function getKnowledgeSources(products: CloudflareProduct[]): KnowledgeSource[] {
   const sources = products.flatMap((product) => PRODUCT_SOURCES[product] ?? []);
   return uniqueSources(sources.length > 0 ? sources : DEFAULT_SOURCES).slice(0, 6);
+}
+
+export function formatKnowledgeContext(sources: KnowledgeSource[]): string {
+  return sources
+    .map((source) => {
+      const checklist = source.checklist?.length ? `\n  Checklist: ${source.checklist.join("; ")}` : "";
+      const summary = source.summary ? `\n  Summary: ${source.summary}` : "";
+      return `- ${source.title}: ${source.url}${summary}${checklist}`;
+    })
+    .join("\n");
 }
 
 export function uniqueProducts(products: CloudflareProduct[]): CloudflareProduct[] {

@@ -5,6 +5,9 @@ import {
   chatAgentName,
   describeChat,
   formatAccessRequestForAdmin,
+  formatApprovedChats,
+  formatBotStatus,
+  formatChatSettings,
   formatChatNotAllowedResponse,
   formatPendingChats,
   getAdminChatIds,
@@ -16,11 +19,13 @@ import {
   isBotAddedToChat,
   parseChatIdArgument,
   parseCommand,
+  parsePositiveInteger,
+  parseToggleArgument,
   sendTelegramMessage,
   toIngestedMessage,
   verifyTelegramSecret
 } from "./telegram";
-import type { CommandRequest, RuntimeEnv, TelegramUpdate } from "./types";
+import type { AgentCommand, CommandRequest, RuntimeEnv, TelegramUpdate } from "./types";
 import type { TelegramChat, TelegramMessage } from "./types";
 import { parseTelegramUpdate } from "./webhook";
 
@@ -72,7 +77,7 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: RuntimeEnv): Pr
   const registry = env.AccessRegistry.getByName("global");
   const isAdmin = isAdminChat(env, message.chat.id);
 
-  if (parsedCommand?.command === "approve" || parsedCommand?.command === "deny" || parsedCommand?.command === "pending") {
+  if (parsedCommand && isAdminCommand(parsedCommand.command)) {
     await handleAdminCommand(parsedCommand, message.chat.id, message.message_id, env, registry);
     return;
   }
@@ -92,9 +97,12 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: RuntimeEnv): Pr
 
   if (!parsedCommand) {
     await agent.ingestMessage(ingestedMessage);
-    const suggestion = await agent.maybeSuggestFix(ingestedMessage);
+    await registry.recordEvent("message_ingested");
+    const settings = await registry.getChatSettings(message.chat.id);
+    const suggestion = await agent.maybeSuggestFix(ingestedMessage, settings);
     if (suggestion) {
       await sendTelegramMessage(env, message.chat.id, suggestion.text, message.message_id);
+      await registry.recordEvent("auto_suggestion_sent");
     }
     return;
   }
@@ -102,6 +110,7 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: RuntimeEnv): Pr
   if (parsedCommand.command !== "forget") {
     await agent.ingestMessage(ingestedMessage);
   }
+  await registry.recordEvent(`command_${parsedCommand.command}`);
 
   const response = await agent.respondToCommand({
     command: parsedCommand.command,
@@ -128,6 +137,50 @@ async function handleAdminCommand(
   if (parsedCommand.command === "pending") {
     const pending = await registry.listPendingChats();
     await sendTelegramMessage(env, adminChatId, formatPendingChats(pending), replyToMessageId);
+    await registry.recordEvent("admin_pending");
+    return;
+  }
+
+  if (parsedCommand.command === "approved") {
+    const approved = await registry.listApprovedChats();
+    await sendTelegramMessage(env, adminChatId, formatApprovedChats(approved), replyToMessageId);
+    await registry.recordEvent("admin_approved");
+    return;
+  }
+
+  if (parsedCommand.command === "status") {
+    const status = await registry.getStatus(new Date().toISOString());
+    await sendTelegramMessage(env, adminChatId, formatBotStatus(status), replyToMessageId);
+    await registry.recordEvent("admin_status");
+    return;
+  }
+
+  if (parsedCommand.command === "autosuggest") {
+    const toggle = parseToggleArgument(parsedCommand.args);
+    if (toggle === null) {
+      const settings = await registry.getChatSettings(adminChatId);
+      await sendTelegramMessage(env, adminChatId, `${formatChatSettings(settings)}\n\nUsage: /autosuggest on|off [chat_id]`, replyToMessageId);
+      return;
+    }
+
+    const targetChatId = parseOptionalTargetChatId(parsedCommand.args) ?? adminChatId;
+    const settings = await registry.updateChatSettings(targetChatId, { autoSuggestionsEnabled: toggle }, new Date().toISOString());
+    await sendTelegramMessage(env, adminChatId, formatChatSettings(settings), replyToMessageId);
+    await registry.recordEvent("admin_autosuggest");
+    return;
+  }
+
+  if (parsedCommand.command === "setcooldown") {
+    const seconds = parsePositiveInteger(parsedCommand.args, 0);
+    if (seconds <= 0) {
+      await sendTelegramMessage(env, adminChatId, "Usage: /setcooldown <seconds> [chat_id]", replyToMessageId);
+      return;
+    }
+
+    const targetChatId = parseOptionalTargetChatId(parsedCommand.args) ?? adminChatId;
+    const settings = await registry.updateChatSettings(targetChatId, { autoSuggestionCooldownSeconds: seconds }, new Date().toISOString());
+    await sendTelegramMessage(env, adminChatId, formatChatSettings(settings), replyToMessageId);
+    await registry.recordEvent("admin_setcooldown");
     return;
   }
 
@@ -141,7 +194,20 @@ async function handleAdminCommand(
     const approved = await registry.approveChat(targetChatId, adminChatId, new Date().toISOString());
     await sendTelegramMessage(env, adminChatId, `Approved chat ${targetChatId}.`, replyToMessageId);
     await notifyChat(env, targetChatId, `This chat has been approved. Use /cfhelp or /diagnose to start.`);
+    await registry.recordEvent("admin_approve");
     console.log("telegram_chat_approved", { targetChatId, approvedBy: adminChatId, title: approved?.title });
+    return;
+  }
+
+  if (parsedCommand.command === "revoke") {
+    const revoked = await registry.revokeChat(targetChatId);
+    await sendTelegramMessage(
+      env,
+      adminChatId,
+      revoked ? `Revoked chat ${targetChatId}.` : `No approved chat found for ${targetChatId}.`,
+      replyToMessageId
+    );
+    await registry.recordEvent("admin_revoke");
     return;
   }
 
@@ -152,6 +218,7 @@ async function handleAdminCommand(
     denied ? `Denied chat ${targetChatId}.` : `No pending request found for chat ${targetChatId}.`,
     replyToMessageId
   );
+  await registry.recordEvent("admin_deny");
 }
 
 async function requestChatApproval(chat: TelegramChat, env: RuntimeEnv, requestedAt: string): Promise<void> {
@@ -186,5 +253,26 @@ async function notifyChat(env: RuntimeEnv, chatId: number, text: string): Promis
 
 function ingestedAt(message: TelegramMessage): string {
   return new Date((message.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
+}
+
+function isAdminCommand(command: AgentCommand | undefined): boolean {
+  return (
+    command === "approve" ||
+    command === "deny" ||
+    command === "pending" ||
+    command === "approved" ||
+    command === "revoke" ||
+    command === "status" ||
+    command === "autosuggest" ||
+    command === "setcooldown"
+  );
+}
+
+function parseOptionalTargetChatId(args: string): number | null {
+  const parts = args.trim().split(/\s+/);
+  const candidate = parts.length > 1 ? parts[1] : null;
+  if (!candidate) return null;
+  const parsed = Number.parseInt(candidate, 10);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 

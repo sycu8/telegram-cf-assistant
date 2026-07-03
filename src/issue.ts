@@ -2,6 +2,7 @@ import {
   clampConfidence,
   detectCloudflareProducts,
   getKnowledgeSources,
+  formatKnowledgeContext,
   redactSensitiveText,
   uniqueProducts,
   uniqueSources,
@@ -297,7 +298,7 @@ Recent messages:
 ${recentMessages || "(none)"}
 
 Available Cloudflare sources:
-${sources.map((source) => `- ${source.title}: ${source.url}`).join("\n")}
+${formatKnowledgeContext(sources)}
 
 Rules:
 - Be accurate. If confidence is low, say what is missing.
@@ -417,7 +418,13 @@ export function formatSourcesResponse(sources: KnowledgeSource[]): string {
     return "No product-specific sources yet. Ask /diagnose after sharing the issue details.";
   }
 
-  return ["Relevant Cloudflare sources:", ...sources.map((source) => `- ${source.title}: ${source.url}`)].join("\n");
+  return [
+    "Relevant Cloudflare sources:",
+    ...sources.map((source) => {
+      const summary = source.summary ? ` — ${source.summary}` : "";
+      return `- ${source.title}: ${source.url}${summary}`;
+    })
+  ].join("\n");
 }
 
 export function formatDiagnoseResponse(state: ChatIssueState, sources: KnowledgeSource[]): string {
@@ -426,9 +433,12 @@ export function formatDiagnoseResponse(state: ChatIssueState, sources: Knowledge
   }
 
   const strongestCause = state.suspectedCauses[0];
+  const confidenceValue = strongestCause?.confidence ?? 0;
   const confidence = strongestCause ? `${Math.round(strongestCause.confidence * 100)}%` : "low";
+  const mode = confidenceMode(confidenceValue);
 
   return [
+    `Reply mode: ${mode}`,
     `Likely issue: ${strongestCause?.cause ?? state.topic ?? "Cloudflare issue, but the cause is not clear yet"}`,
     `Confidence: ${confidence}`,
     "",
@@ -441,6 +451,12 @@ export function formatDiagnoseResponse(state: ChatIssueState, sources: Knowledge
     "",
     formatSourcesResponse(sources)
   ].join("\n");
+}
+
+function confidenceMode(confidence: number): "direct fix" | "guided checks" | "clarifying questions" {
+  if (confidence >= 0.8) return "direct fix";
+  if (confidence >= 0.55) return "guided checks";
+  return "clarifying questions";
 }
 
 function extractSymptom(text: string): string {
