@@ -2,6 +2,7 @@ import {
   clampConfidence,
   detectCloudflareProducts,
   getKnowledgeSources,
+  formatKnowledgeContext,
   redactSensitiveText,
   uniqueProducts,
   uniqueSources,
@@ -27,6 +28,14 @@ const ERROR_HINTS = [
   "undefined",
   "not found",
   "does not work",
+  "not working",
+  "issue",
+  "problem",
+  "bug",
+  "fix",
+  "troubleshoot",
+  "can't",
+  "cannot",
   "too many redirects",
   "403",
   "404",
@@ -34,6 +43,51 @@ const ERROR_HINTS = [
   "522",
   "525",
   "526"
+];
+
+const CUSTOMER_QUESTION_HINTS = [
+  "?",
+  "how",
+  "why",
+  "what",
+  "where",
+  "when",
+  "can you",
+  "could you",
+  "please help",
+  "need help",
+  "help me",
+  "guide",
+  "how to",
+  "what should",
+  "làm sao",
+  "làm sao",
+  "làm thế nào",
+  "làm thế nào",
+  "tại sao",
+  "tại sao",
+  "vì sao",
+  "vì sao",
+  "cách sửa",
+  "cách sửa",
+  "sửa lỗi",
+  "sửa lỗi",
+  "khắc phục",
+  "khắc phục",
+  "hướng dẫn",
+  "hướng dẫn",
+  "giúp",
+  "giúp",
+  "cần hỗ trợ",
+  "cần hỗ trợ",
+  "khách hàng hỏi",
+  "khách hàng hỏi",
+  "bị lỗi",
+  "bị lỗi",
+  "không chạy",
+  "không chạy",
+  "không hoạt động",
+  "không hoạt động"
 ];
 
 export function createInitialState(): ChatIssueState {
@@ -44,9 +98,13 @@ export function createInitialState(): ChatIssueState {
     suspectedCauses: [],
     missingInfo: [],
     recommendedNextSteps: [],
+    conversationNotes: [],
+    openQuestions: [],
     recentMessages: [],
     lastSummary: null,
     lastSources: [],
+    lastAutoSuggestionAt: null,
+    lastAutoSuggestionFingerprint: null,
     messageCount: 0,
     updatedAt: null
   };
@@ -64,6 +122,14 @@ export function reduceIssueState(
   const suspectedCauses = mergeCauses([...inferSuspectedCauses(cleanText), ...currentState.suspectedCauses]).slice(0, 5);
   const missingInfo = uniqueStrings([...inferMissingInfo(products, cleanText), ...currentState.missingInfo], 8);
   const recommendedNextSteps = uniqueStrings([...inferNextSteps(products, cleanText), ...currentState.recommendedNextSteps], 8);
+  const conversationNotes = uniqueStrings(
+    [buildConversationNote(cleanText, products), ...(currentState.conversationNotes ?? [])],
+    12
+  );
+  const openQuestions = uniqueStrings(
+    [extractCustomerQuestion(cleanText), ...(currentState.openQuestions ?? [])],
+    8
+  );
   const recentMessages = [
     ...currentState.recentMessages,
     {
@@ -83,7 +149,11 @@ export function reduceIssueState(
     suspectedCauses,
     missingInfo,
     recommendedNextSteps,
+    conversationNotes,
+    openQuestions,
     recentMessages,
+    lastAutoSuggestionAt: currentState.lastAutoSuggestionAt ?? null,
+    lastAutoSuggestionFingerprint: currentState.lastAutoSuggestionFingerprint ?? null,
     messageCount: currentState.messageCount + 1,
     updatedAt: message.at
   };
@@ -102,6 +172,8 @@ export function mergeAiUnderstanding(
     suspectedCauses: mergeCauses([...(partial.suspectedCauses ?? []), ...currentState.suspectedCauses]).slice(0, 5),
     missingInfo: uniqueStrings([...(partial.missingInfo ?? []), ...currentState.missingInfo], 8),
     recommendedNextSteps: uniqueStrings([...(partial.recommendedNextSteps ?? []), ...currentState.recommendedNextSteps], 8),
+    conversationNotes: uniqueStrings([...(partial.conversationNotes ?? []), ...(currentState.conversationNotes ?? [])], 12),
+    openQuestions: uniqueStrings([...(partial.openQuestions ?? []), ...(currentState.openQuestions ?? [])], 8),
     lastSummary:
       typeof partial.lastSummary === "string" && partial.lastSummary.trim()
         ? partial.lastSummary.trim()
@@ -112,6 +184,88 @@ export function mergeAiUnderstanding(
 
 export function getSourcesForState(state: ChatIssueState): KnowledgeSource[] {
   return uniqueSources([...state.lastSources, ...getKnowledgeSources(state.products)]).slice(0, 6);
+}
+
+export function shouldSuggestAutomatically(
+  state: ChatIssueState,
+  message: IngestedMessage,
+  options: {
+    now: Date;
+    cooldownSeconds: number;
+    minConfidence: number;
+  }
+): { shouldSuggest: boolean; fingerprint: string; reason: string } {
+  const fingerprint = buildAutoSuggestionFingerprint(state);
+
+  if (message.isCommand) {
+    return { shouldSuggest: false, fingerprint, reason: "command-message" };
+  }
+
+  if (state.products.length === 0) {
+    return { shouldSuggest: false, fingerprint, reason: "no-cloudflare-product" };
+  }
+
+  const hasCustomerQuestion = messageLooksLikeCustomerQuestion(message.text) || state.openQuestions.length > 0;
+  const hasIssueSignal = messageLooksLikeIssue(message.text) || state.symptoms.length > 0 || state.suspectedCauses.length > 0;
+
+  if (!hasIssueSignal && !hasCustomerQuestion) {
+    return { shouldSuggest: false, fingerprint, reason: "no-customer-question-or-issue-signal" };
+  }
+
+  const strongestCause = state.suspectedCauses[0];
+  if (strongestCause && strongestCause.confidence < options.minConfidence) {
+    return { shouldSuggest: false, fingerprint, reason: "low-confidence" };
+  }
+
+  if (state.lastAutoSuggestionAt) {
+    const lastSuggestionMs = Date.parse(state.lastAutoSuggestionAt);
+    const cooldownMs = options.cooldownSeconds * 1000;
+    if (Number.isFinite(lastSuggestionMs) && options.now.getTime() - lastSuggestionMs < cooldownMs) {
+      return { shouldSuggest: false, fingerprint, reason: "cooldown" };
+    }
+  }
+
+  if (state.lastAutoSuggestionFingerprint && state.lastAutoSuggestionFingerprint === fingerprint) {
+    return { shouldSuggest: false, fingerprint, reason: "duplicate-topic" };
+  }
+
+  return { shouldSuggest: true, fingerprint, reason: "issue-detected" };
+}
+
+export function markAutoSuggestionSent(
+  state: ChatIssueState,
+  fingerprint: string,
+  at: string
+): ChatIssueState {
+  return {
+    ...state,
+    lastAutoSuggestionAt: at,
+    lastAutoSuggestionFingerprint: fingerprint,
+    updatedAt: at
+  };
+}
+
+export function formatAutoSuggestionResponse(state: ChatIssueState, sources: KnowledgeSource[]): string {
+  const diagnosis = formatDiagnoseResponse(state, sources);
+  return [
+    "Auto-detected customer question or possible Cloudflare issue.",
+    "",
+    formatAssistantNotes(state),
+    "",
+    diagnosis,
+    "",
+    "Reply with /diagnose for a deeper answer, /nextsteps for a short action list, or /forget to clear this chat context."
+  ].join("\n");
+}
+
+export function messageLooksLikeIssue(text: string): boolean {
+  const lower = text.toLowerCase();
+  return ERROR_HINTS.some((hint) => lower.includes(hint));
+}
+
+export function messageLooksLikeCustomerQuestion(text: string): boolean {
+  const lower = text.toLowerCase();
+  return CUSTOMER_QUESTION_HINTS.some((hint) => lower.includes(hint));
 }
 
 export function buildCommandPrompt(command: AgentCommand, state: ChatIssueState, sources: KnowledgeSource[]): string {
@@ -132,6 +286,8 @@ ${JSON.stringify(
     suspectedCauses: state.suspectedCauses,
     missingInfo: state.missingInfo,
     recommendedNextSteps: state.recommendedNextSteps,
+    conversationNotes: state.conversationNotes,
+    openQuestions: state.openQuestions,
     lastSummary: state.lastSummary
   },
   null,
@@ -142,14 +298,22 @@ Recent messages:
 ${recentMessages || "(none)"}
 
 Available Cloudflare sources:
-${sources.map((source) => `- ${source.title}: ${source.url}`).join("\n")}
+${formatKnowledgeContext(sources)}
 
 Rules:
 - Be accurate. If confidence is low, say what is missing.
+- Decide whether the customer is asking for help; if yes, answer proactively with troubleshooting guidance.
+- Use conversationNotes and openQuestions as the assistant's working notes.
 - Prefer Cloudflare products, bindings, Wrangler config, DNS, SSL/TLS, WAF, Cache, and deployment diagnostics.
 - Do not claim a root cause is confirmed unless the messages prove it.
 - Give fast practical guidance: likely issue, confidence, checks, fix steps, and missing info.
 - Keep the Telegram reply under 3500 characters. Use plain text, no Markdown tables.`;
+}
+
+function buildAutoSuggestionFingerprint(state: ChatIssueState): string {
+  const products = [...state.products].sort().join(",");
+  const cause = state.suspectedCauses[0]?.cause ?? state.topic ?? "unknown";
+  return `${products}|${cause}`.toLowerCase();
 }
 
 export function buildUnderstandingPrompt(state: ChatIssueState): string {
@@ -166,6 +330,8 @@ symptoms: string[]
 suspectedCauses: { cause: string, confidence: number, evidence: string[] }[]
 missingInfo: string[]
 recommendedNextSteps: string[]
+conversationNotes: string[]
+openQuestions: string[]
 lastSummary: string | null
 
 Existing understanding:
@@ -185,6 +351,26 @@ export function formatHelpResponse(): string {
     "/forget - clear this chat's stored context",
     "/config - show active bot configuration"
   ].join("\n");
+}
+
+export function formatAssistantNotes(state: ChatIssueState): string {
+  const notes = (state.conversationNotes ?? []).slice(0, 4);
+  const questions = (state.openQuestions ?? []).slice(0, 3);
+  const lines = ["Assistant notes:"];
+
+  if (notes.length === 0 && questions.length === 0) {
+    return "Assistant notes: I have limited context so far.";
+  }
+
+  for (const note of notes) {
+    lines.push(`- ${note}`);
+  }
+
+  for (const question of questions) {
+    lines.push(`- Customer question: ${question}`);
+  }
+
+  return lines.join("\n");
 }
 
 export function formatFallbackCommandResponse(command: AgentCommand, state: ChatIssueState, sources: KnowledgeSource[]): string {
@@ -232,7 +418,13 @@ export function formatSourcesResponse(sources: KnowledgeSource[]): string {
     return "No product-specific sources yet. Ask /diagnose after sharing the issue details.";
   }
 
-  return ["Relevant Cloudflare sources:", ...sources.map((source) => `- ${source.title}: ${source.url}`)].join("\n");
+  return [
+    "Relevant Cloudflare sources:",
+    ...sources.map((source) => {
+      const summary = source.summary ? ` — ${source.summary}` : "";
+      return `- ${source.title}: ${source.url}${summary}`;
+    })
+  ].join("\n");
 }
 
 export function formatDiagnoseResponse(state: ChatIssueState, sources: KnowledgeSource[]): string {
@@ -241,9 +433,12 @@ export function formatDiagnoseResponse(state: ChatIssueState, sources: Knowledge
   }
 
   const strongestCause = state.suspectedCauses[0];
+  const confidenceValue = strongestCause?.confidence ?? 0;
   const confidence = strongestCause ? `${Math.round(strongestCause.confidence * 100)}%` : "low";
+  const mode = confidenceMode(confidenceValue);
 
   return [
+    `Reply mode: ${mode}`,
     `Likely issue: ${strongestCause?.cause ?? state.topic ?? "Cloudflare issue, but the cause is not clear yet"}`,
     `Confidence: ${confidence}`,
     "",
@@ -258,12 +453,35 @@ export function formatDiagnoseResponse(state: ChatIssueState, sources: Knowledge
   ].join("\n");
 }
 
+function confidenceMode(confidence: number): "direct fix" | "guided checks" | "clarifying questions" {
+  if (confidence >= 0.8) return "direct fix";
+  if (confidence >= 0.55) return "guided checks";
+  return "clarifying questions";
+}
+
 function extractSymptom(text: string): string {
   const lower = text.toLowerCase();
   if (ERROR_HINTS.some((hint) => lower.includes(hint))) {
     return text.length > 220 ? `${text.slice(0, 217)}...` : text;
   }
   return "";
+}
+
+function buildConversationNote(text: string, products: CloudflareProduct[]): string {
+  const snippets: string[] = [];
+  if (products.length > 0) snippets.push(`Products mentioned: ${products.slice(0, 4).join(", ")}`);
+  if (messageLooksLikeIssue(text)) snippets.push(`Issue signal: ${truncateNote(text)}`);
+  if (messageLooksLikeCustomerQuestion(text)) snippets.push(`Customer appears to ask for help: ${truncateNote(text)}`);
+  return snippets.join(" | ");
+}
+
+function extractCustomerQuestion(text: string): string {
+  if (!messageLooksLikeCustomerQuestion(text)) return "";
+  return truncateNote(text);
+}
+
+function truncateNote(text: string): string {
+  return text.length > 180 ? `${text.slice(0, 177)}...` : text;
 }
 
 function inferTopic(products: CloudflareProduct[], text: string): string | null {

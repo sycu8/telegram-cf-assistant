@@ -4,6 +4,8 @@ Telegram assistant for Cloudflare troubleshooting, deployed on Cloudflare Worker
 
 The bot reads messages in approved Telegram chats, keeps a rolling understanding of the discussion, and replies only when someone runs a command such as `/diagnose`.
 
+In approved chats, it can also automatically suggest troubleshooting guidance when it detects that a customer is asking for help or mentioning a likely Cloudflare issue in normal group conversation.
+
 ## Live endpoints
 
 ```text
@@ -21,10 +23,16 @@ Do not put API tokens, Telegram bot tokens, webhook secrets, or private chat IDs
 - Per-chat state and message history with `ChatIssueAgent`.
 - Approval-based chat onboarding with `AccessRegistry`.
 - Workers AI and AI Gateway for Cloudflare-focused answers.
+- Curated Cloudflare troubleshooting context with source summaries and product-specific checklists.
 - Deterministic fallback guidance when AI is unavailable.
 - Secret redaction before storing messages or building AI prompts.
 - Fast webhook acknowledgement with background processing.
 - Admin approval commands for new groups/channels.
+- Conservative auto-suggestions for detected Cloudflare issues, with cooldowns to avoid spam.
+- Customer-question detection in English and Vietnamese, including phrases such as "how to", "need help", "làm sao", "sửa lỗi", "khắc phục", and "hướng dẫn".
+- Assistant working notes via `conversationNotes` and `openQuestions` so replies can use the broader chat context.
+- Per-chat auto-suggestion settings controlled by Telegram admin commands.
+- Basic observability counters for messages, commands, approvals, and auto-suggestions.
 
 ## Architecture
 
@@ -58,21 +66,53 @@ These commands work in approved chats:
 
 The bot stays silent for normal messages. It uses those messages only to keep context for the next command.
 
+Exception: if `AUTO_SUGGESTIONS_ENABLED=true`, the bot can proactively reply when it detects either:
+
+- a Cloudflare issue/error signal
+- a customer question asking for troubleshooting or fix guidance
+
+```text
+My Worker deploys but env.DB is undefined with D1
+```
+
+```text
+Khách hàng hỏi làm sao sửa lỗi Cloudflare Worker deploy xong nhưng API trả 500?
+```
+
+The bot only auto-suggests when the message has Cloudflare product context plus either issue/error language or customer-help intent. It suppresses repeated suggestions using a per-chat cooldown and issue fingerprint.
+
+When it responds automatically, it includes:
+
+- assistant notes from the conversation
+- likely issue, confidence, and reply mode
+- fix/troubleshooting steps
+- missing information to ask the customer for
+- relevant Cloudflare docs, source summaries, and product-specific checklist context
+
 ## Admin commands
 
 These commands work only from admin chats:
 
 ```text
 /pending
+/approved
 /approve <chat_id>
 /deny <chat_id>
+/revoke <chat_id>
+/status
+/autosuggest on|off [chat_id]
+/setcooldown <seconds> [chat_id]
 ```
 
 Example:
 
 ```text
 /approve -1001234567890
+/autosuggest off -1001234567890
+/setcooldown 300 -1001234567890
 ```
+
+`/status` reports pending chat count, approved chat count, and event counters such as `message_ingested`, `auto_suggestion_sent`, and command usage.
 
 ## Chat approval workflow
 
@@ -165,6 +205,24 @@ npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 npx wrangler secret put ALLOWED_CHAT_IDS
 npx wrangler secret put ADMIN_CHAT_IDS
 npx wrangler secret put BOT_USERNAME
+```
+
+Auto-suggestion behavior is configured in `wrangler.jsonc`:
+
+```text
+AUTO_SUGGESTIONS_ENABLED=true
+AUTO_SUGGESTION_COOLDOWN_SECONDS=900
+AUTO_SUGGESTION_MIN_CONFIDENCE=0.65
+```
+
+Admins can override auto-suggestion behavior per chat without redeploying:
+
+```text
+/autosuggest on
+/autosuggest off
+/autosuggest off -1001234567890
+/setcooldown 300
+/setcooldown 900 -1001234567890
 ```
 
 Set `CLOUDFLARE_API_TOKEN` in the deployment environment, not in the repo:

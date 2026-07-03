@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   chatAgentName,
   formatAccessRequestForAdmin,
+  formatApprovedChats,
+  formatBotStatus,
+  formatChatSettings,
   formatChatNotAllowedResponse,
   formatPendingChats,
   getTelegramChatMemberUpdate,
@@ -11,6 +14,7 @@ import {
   isBotAddedToChat,
   parseChatIdArgument,
   parseCommand,
+  parseToggleArgument,
   sendTelegramMessage
 } from "../src/telegram";
 import type { RuntimeEnv } from "../src/types";
@@ -40,6 +44,23 @@ describe("telegram helpers", () => {
     });
     expect(parseChatIdArgument("-100123 please")).toBe(-100123);
     expect(parseChatIdArgument("not-a-chat")).toBeNull();
+    expect(parseCommand("/status", "CfHelperBot")?.command).toBe("status");
+    expect(parseCommand("/approved", "CfHelperBot")?.command).toBe("approved");
+    expect(parseCommand("/revoke -100123", "CfHelperBot")?.command).toBe("revoke");
+    expect(parseCommand("/autosuggest off -100123", "CfHelperBot")).toEqual({
+      command: "autosuggest",
+      raw: "autosuggest",
+      args: "off -100123"
+    });
+    expect(parseCommand("/setcooldown 120 -100123", "CfHelperBot")?.args).toBe("120 -100123");
+  });
+
+  it("parses auto-suggest toggle arguments", () => {
+    expect(parseToggleArgument("on")).toBe(true);
+    expect(parseToggleArgument("enabled -100123")).toBe(true);
+    expect(parseToggleArgument("off")).toBe(false);
+    expect(parseToggleArgument("disabled -100123")).toBe(false);
+    expect(parseToggleArgument("maybe")).toBeNull();
   });
 
   it("allows only configured chats unless explicitly open", () => {
@@ -79,6 +100,30 @@ describe("telegram helpers", () => {
     expect(formatAccessRequestForAdmin(record)).toContain("/approve -100123");
     expect(formatPendingChats([record])).toContain("Sanitized Group");
     expect(formatPendingChats([])).toContain("No pending");
+    expect(formatApprovedChats([{ ...record, approvedAt: "2026-06-23T01:00:00.000Z" }])).toContain("Approved chats");
+    expect(formatApprovedChats([])).toContain("No approved");
+  });
+
+  it("formats status and chat settings", () => {
+    expect(
+      formatBotStatus({
+        pendingChats: 1,
+        approvedChats: 2,
+        events: { message_ingested: 3 },
+        generatedAt: "2026-06-23T00:00:00.000Z"
+      })
+    ).toContain("message_ingested: 3");
+
+    expect(
+      formatChatSettings({
+        chatId: -100123,
+        autoSuggestionsEnabled: false,
+        autoSuggestionCooldownSeconds: 120,
+        autoSuggestionMinConfidence: 0.7,
+        language: "auto",
+        updatedAt: "2026-06-23T00:00:00.000Z"
+      })
+    ).toContain("Auto suggestions: off");
   });
 
   it("recognizes channel posts and bot-added updates", () => {

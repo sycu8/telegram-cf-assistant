@@ -1,6 +1,8 @@
 import type {
   AgentCommand,
   ChatAccessRecord,
+  BotStatus,
+  ChatSettings,
   IngestedMessage,
   ParsedCommand,
   TelegramChat,
@@ -17,6 +19,11 @@ const COMMAND_ALIASES: Record<string, AgentCommand> = {
   approve: "approve",
   deny: "deny",
   pending: "pending",
+  approved: "approved",
+  revoke: "revoke",
+  status: "status",
+  autosuggest: "autosuggest",
+  setcooldown: "setcooldown",
   diagnose: "diagnose",
   summary: "summary",
   nextsteps: "nextsteps",
@@ -139,6 +146,49 @@ export function formatPendingChats(records: ChatAccessRecord[]): string {
       return `- ${record.chatId} (${label}) requested ${record.requestedAt}`;
     })
   ].join("\n");
+}
+
+export function formatApprovedChats(records: ChatAccessRecord[]): string {
+  if (records.length === 0) return "No approved chats yet.";
+
+  return [
+    "Approved chats:",
+    ...records.map((record) => {
+      const label = record.title ?? record.username ?? record.type;
+      return `- ${record.chatId} (${label}) approved ${record.approvedAt ?? "unknown"}`;
+    })
+  ].join("\n");
+}
+
+export function formatBotStatus(status: BotStatus): string {
+  const events = Object.entries(status.events);
+  return [
+    "Bot status:",
+    `Pending chats: ${status.pendingChats}`,
+    `Approved chats: ${status.approvedChats}`,
+    `Generated at: ${status.generatedAt}`,
+    "Events:",
+    ...(events.length > 0 ? events.map(([event, count]) => `- ${event}: ${count}`) : ["- none recorded"])
+  ].join("\n");
+}
+
+export function formatChatSettings(settings: ChatSettings): string {
+  return [
+    `Chat settings for ${settings.chatId}:`,
+    `Auto suggestions: ${settings.autoSuggestionsEnabled ? "on" : "off"}`,
+    `Cooldown: ${settings.autoSuggestionCooldownSeconds} seconds`,
+    `Min confidence: ${settings.autoSuggestionMinConfidence}`,
+    `Language: ${settings.language}`,
+    `Updated: ${settings.updatedAt}`
+  ].join("\n");
+}
+
+export function parseToggleArgument(args: string): boolean | null {
+  const [raw] = args.trim().toLowerCase().split(/\s+/);
+  if (!raw) return null;
+  if (raw === "on" || raw === "true" || raw === "enable" || raw === "enabled") return true;
+  if (raw === "off" || raw === "false" || raw === "disable" || raw === "disabled") return false;
+  return null;
 }
 
 export async function verifyTelegramSecret(request: Request, env: RuntimeEnv): Promise<boolean> {
